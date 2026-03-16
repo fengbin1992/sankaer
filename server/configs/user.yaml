@@ -1,0 +1,27 @@
+server:
+  port: 8082
+
+mysql:
+  dsn: "root:dev123456@tcp(127.0.0.1:3306)/sankaer?charset=utf8mb4&parseTime=True"
+  max_open_conns: 100
+  max_idle_conns: 20
+
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 1
+
+wechat:
+  app_id: ""
+  app_secret: ""
+
+sms:
+  provider: "aliyun"
+  access_key: ""
+  access_secret: ""
+  sign_name: "三卡二"
+  template_code: ""
+
+log:
+  level: "debug"
+  output: "stdout"

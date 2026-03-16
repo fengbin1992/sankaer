@@ -1,0 +1,19 @@
+server:
+  port: 8080
+  max_connections: 100000
+
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 0
+
+nats:
+  addr: "nats://127.0.0.1:4222"
+
+jwt:
+  secret: "dev-secret-change-in-production"
+  expire: "168h"
+
+log:
+  level: "debug"
+  output: "stdout"

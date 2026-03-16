@@ -1,0 +1,28 @@
+server:
+  port: 8081
+  max_rooms: 10000
+
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 0
+
+nats:
+  addr: "nats://127.0.0.1:4222"
+
+timer:
+  flip_card: 10
+  bid: 15
+  set_bottom: 30
+  call_partner: 20
+  play_card: 20
+  result: 60
+
+bot:
+  think_delay_min: 1000
+  think_delay_max: 3000
+  disconnect_timeout: 30
+
+log:
+  level: "debug"
+  output: "stdout"

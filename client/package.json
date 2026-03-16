@@ -1,0 +1,13 @@
+{
+    "name": "sankaer-client",
+    "version": "1.0.0",
+    "description": "三卡二 - Cocos Creator 客户端",
+    "scripts": {
+        "proto": "bash ../scripts/proto-gen.sh"
+    },
+    "devDependencies": {
+        "@anthropic-ai/sdk": "latest",
+        "protobufjs": "^7.4.0",
+        "protobufjs-cli": "^1.1.3"
+    }
+}

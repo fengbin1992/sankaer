@@ -1,0 +1,14 @@
+server:
+  port: 8083
+
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 0
+
+nats:
+  addr: "nats://127.0.0.1:4222"
+
+log:
+  level: "debug"
+  output: "stdout"

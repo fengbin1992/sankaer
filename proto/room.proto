@@ -1,0 +1,65 @@
+syntax = "proto3";
+package sankaer;
+option go_package = "sankaer/internal/pkg/pb";
+
+import "common.proto";
+
+// === 客户端 → 服务端 ===
+
+// 快速匹配
+message C2S_QuickMatch {
+    uint32 tier = 1;  // 场次倍率 10/100/1000/10000
+}
+
+// 取消匹配
+message C2S_CancelMatch {}
+
+// 创建房间
+message C2S_CreateRoom {
+    uint32 tier = 1;
+}
+
+// 加入房间
+message C2S_JoinRoom {
+    string room_id = 1;
+}
+
+// 离开房间
+message C2S_LeaveRoom {}
+
+// 准备
+message C2S_Ready {}
+
+// 取消准备
+message C2S_CancelReady {}
+
+// === 服务端 → 客户端 ===
+
+// 匹配状态更新
+message S2C_MatchUpdate {
+    uint32 waiting_count = 1;  // 当前排队人数
+    uint32 elapsed_sec   = 2;  // 已等待秒数
+}
+
+// 匹配成功 / 加入房间成功
+message S2C_RoomJoined {
+    string              room_id = 1;
+    repeated PlayerInfo players = 2;
+    uint32              tier    = 3;
+}
+
+// 玩家加入房间（广播）
+message S2C_PlayerJoined {
+    PlayerInfo player = 1;
+}
+
+// 玩家离开房间（广播）
+message S2C_PlayerLeft {
+    string user_id = 1;
+}
+
+// 玩家准备状态变更（广播）
+message S2C_ReadyUpdate {
+    string user_id  = 1;
+    bool   is_ready = 2;
+}

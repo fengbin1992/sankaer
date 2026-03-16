@@ -1,0 +1,29 @@
+# === Go ===
+server/bin/
+server/vendor/
+
+# === Cocos Creator ===
+client/build/
+client/temp/
+client/library/
+client/local/
+client/native/
+client/profiles/
+
+# === Proto 生成产物 ===
+server/internal/pkg/pb/*.pb.go
+client/assets/scripts/protocol/generated/*.ts
+
+# === 通用 ===
+node_modules/
+.DS_Store
+*.log
+*.env
+.env.local
+.idea/
+.vscode/
+*.swp
+
+# === 部署敏感文件 ===
+deploy/k8s/secrets/
+server/configs/*.prod.yaml

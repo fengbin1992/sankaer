@@ -1,0 +1,156 @@
+syntax = "proto3";
+package sankaer;
+option go_package = "sankaer/internal/pkg/pb";
+
+import "common.proto";
+
+// === 客户端 → 服务端 ===
+
+// 翻牌定首家
+message C2S_FlipCard {}
+
+// 叫分
+message C2S_Bid {
+    uint32 score = 1;  // 75/80/85/90/95/100
+    Suit   suit  = 2;  // 主花色
+}
+
+// 不叫
+message C2S_PassBid {}
+
+// 弃局（强制叫分后）
+message C2S_Forfeit {}
+
+// 扣底
+message C2S_SetBottom {
+    repeated Card cards = 1;  // 4 张
+}
+
+// 叫搭档
+message C2S_CallPartner {
+    Card card = 1;  // 指定的搭档牌
+}
+
+// 出牌
+message C2S_PlayCard {
+    Card card = 1;  // 单张
+}
+
+// 托管开关
+message C2S_AutoPlay {
+    bool enable = 1;
+}
+
+// 快捷聊天
+message C2S_Chat {
+    uint32 chat_id = 1;  // 预设聊天语ID
+}
+
+// === 服务端 → 客户端 ===
+
+// 房间全量状态（断线重连用）
+message S2C_RoomState {
+    string              room_id        = 1;
+    repeated PlayerInfo players        = 2;
+    string              status         = 3;  // waiting/bidding/playing/finished
+    Suit                trump_suit     = 4;
+    uint32              bid_score      = 5;
+    string              dealer_id      = 6;
+    Card                partner_card   = 7;
+    bool                is_solo        = 8;
+    uint32              current_round  = 9;
+    string              current_turn   = 10;
+    uint32              catcher_score  = 11;
+    repeated Card       my_hand        = 12;  // 当前玩家手牌
+    repeated RoundPlay  current_plays  = 13;  // 本轮已出的牌
+}
+
+// 本轮出牌记录
+message RoundPlay {
+    string player_id = 1;
+    Card   card      = 2;
+}
+
+// 发牌
+message S2C_DealCards {
+    repeated Card cards = 1;  // 10 张手牌
+}
+
+// 翻牌结果
+message S2C_FlipResult {
+    Card   card            = 1;
+    uint32 value           = 2;
+    string first_dealer_id = 3;
+}
+
+// 叫分更新
+message S2C_BidUpdate {
+    string player_id = 1;
+    uint32 score     = 2;
+    Suit   suit      = 3;
+}
+
+// 叫分结果
+message S2C_BidResult {
+    string dealer_id = 1;
+    uint32 score     = 2;
+    Suit   suit      = 3;
+}
+
+// 全部不叫
+message S2C_AllPassed {
+    string forced_dealer_id = 1;
+}
+
+// 底牌（仅庄家收到）
+message S2C_BottomCards {
+    repeated Card cards = 1;  // 4 张
+}
+
+// 叫搭档结果（广播）
+message S2C_PartnerCalled {
+    Card card     = 1;
+    bool is_solo  = 2;
+}
+
+// 轮到谁出牌
+message S2C_Turn {
+    string player_id = 1;
+    uint32 timeout   = 2;  // 秒
+}
+
+// 出牌广播
+message S2C_CardPlayed {
+    string player_id = 1;
+    Card   card      = 2;
+}
+
+// 一轮结束
+message S2C_RoundResult {
+    string winner_id           = 1;
+    uint32 points              = 2;   // 本轮分值
+    uint32 total_catcher_score = 3;   // 抓分方累计
+}
+
+// 游戏结算
+message S2C_GameResult {
+    uint32              bid_score         = 1;
+    uint32              catcher_score     = 2;
+    uint32              bottom_points     = 3;
+    bool                bottom_doubled    = 4;
+    string              winner            = 5;   // dealer / catcher / forfeit
+    bool                is_solo           = 6;
+    bool                is_zero_clear     = 7;   // 清零双倍
+    bool                is_last_hand_bonus = 8;  // 关底双倍
+    string              dealer_id         = 9;
+    string              partner_id        = 10;
+    Card                partner_card      = 11;
+    repeated Settlement settlements       = 12;
+}
+
+message Settlement {
+    string player_id  = 1;
+    string role       = 2;  // dealer / partner / catcher
+    int32  multiplier = 3;  // 2/1/4
+    int64  amount     = 4;  // 正=赢 负=输
+}

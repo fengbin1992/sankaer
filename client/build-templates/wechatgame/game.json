@@ -1,0 +1,18 @@
+{
+    "subpackages": [
+        {
+            "name": "login",
+            "root": "assets/bundles/login/"
+        },
+        {
+            "name": "lobby",
+            "root": "assets/bundles/lobby/"
+        },
+        {
+            "name": "game",
+            "root": "assets/bundles/game/"
+        }
+    ],
+    "deviceOrientation": "portrait",
+    "showStatusBar": false
+}

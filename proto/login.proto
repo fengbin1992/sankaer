@@ -1,0 +1,46 @@
+syntax = "proto3";
+package sankaer;
+option go_package = "sankaer/internal/pkg/pb";
+
+import "common.proto";
+
+// === 客户端 → 服务端 ===
+
+// 微信登录
+message C2S_WechatLogin {
+    string code = 1;  // wx.login 获取的 code
+}
+
+// 手机号登录
+message C2S_PhoneLogin {
+    string phone     = 1;
+    string sms_code  = 2;
+}
+
+// 账号密码登录
+message C2S_AccountLogin {
+    string account  = 1;
+    string password = 2;
+}
+
+// 请求发送验证码
+message C2S_SendSmsCode {
+    string phone = 1;
+}
+
+// === 服务端 → 客户端 ===
+
+// 登录结果
+message S2C_LoginResult {
+    bool       success    = 1;
+    string     token      = 2;   // JWT Token
+    PlayerInfo player     = 3;
+    int64      coins      = 4;   // 金币余额
+    string     error_msg  = 5;
+}
+
+// 验证码发送结果
+message S2C_SmsCodeResult {
+    bool   success   = 1;
+    string error_msg = 2;
+}
