@@ -88,6 +88,8 @@ export class GameStore {
     isSolo: boolean = false;
     currentTurnId: string = '';
     turnTimeout: number = 0;
+    turnDeadlineAt: number = 0;
+    playerCardCounts: Record<string, number> = {};
     currentRoundPlays: Array<{ player_id: string; card: CardData }> = [];
     catcherScore: number = 0;
 
@@ -148,6 +150,7 @@ export class GameStore {
         this.roomId = data.room_id;
         this.tier = data.tier;
         this.players = data.players || [];
+        this.playerCardCounts = {};
         this.phase = 'room';
         EventManager.instance.emit('ROOM_JOINED', data);
     }
@@ -155,12 +158,14 @@ export class GameStore {
     private onPlayerJoined(data: any): void {
         if (data.player) {
             this.players.push(data.player);
+            this.playerCardCounts[data.player.user_id] = 0;
         }
         EventManager.instance.emit('PLAYER_JOINED', data);
     }
 
     private onPlayerLeft(data: any): void {
         this.players = this.players.filter(p => p.user_id !== data.user_id);
+        delete this.playerCardCounts[data.user_id];
         EventManager.instance.emit('PLAYER_LEFT', data);
     }
 
@@ -174,6 +179,7 @@ export class GameStore {
         this.phase = 'dealing';
         this.myHand = [];
         this.selectedCards.clear();
+        this.playerCardCounts = {};
         this.currentRoundPlays = [];
         this.catcherScore = 0;
         EventManager.instance.emit('GAME_START', data);
@@ -181,6 +187,10 @@ export class GameStore {
 
     private onDealCards(data: any): void {
         this.myHand = data.cards || [];
+        this.players.forEach((player) => {
+            this.playerCardCounts[player.user_id] = 10;
+        });
+        this.playerCardCounts[this.userId] = this.myHand.length;
         this.phase = 'bidding';
         EventManager.instance.emit('DEAL_CARDS', data);
     }
@@ -209,6 +219,7 @@ export class GameStore {
         // 庄家收到底牌，加入手牌
         if (data.cards) {
             this.myHand = [...this.myHand, ...data.cards];
+            this.playerCardCounts[this.userId] = this.myHand.length;
         }
         EventManager.instance.emit('BOTTOM_CARDS', data);
     }
@@ -224,6 +235,7 @@ export class GameStore {
     private onTurn(data: any): void {
         this.currentTurnId = data.player_id;
         this.turnTimeout = data.timeout;
+        this.turnDeadlineAt = Date.now() + Math.max(data.timeout || 0, 0) * 1000;
         EventManager.instance.emit('TURN', data);
     }
 
@@ -239,6 +251,9 @@ export class GameStore {
             );
             if (idx >= 0) this.myHand.splice(idx, 1);
             this.selectedCards.clear();
+            this.playerCardCounts[this.userId] = this.myHand.length;
+        } else if (this.playerCardCounts[data.player_id] !== undefined) {
+            this.playerCardCounts[data.player_id] = Math.max(this.playerCardCounts[data.player_id] - 1, 0);
         }
         EventManager.instance.emit('CARD_PLAYED', data);
     }
@@ -282,5 +297,13 @@ export class GameStore {
     get mySeatIdx(): number {
         const me = this.players.find(p => p.user_id === this.userId);
         return me ? me.seat_idx : -1;
+    }
+
+    /** 当前剩余操作秒数 */
+    get remainingTurnSeconds(): number {
+        if (this.turnDeadlineAt <= 0) {
+            return this.turnTimeout;
+        }
+        return Math.max(Math.ceil((this.turnDeadlineAt - Date.now()) / 1000), 0);
     }
 }

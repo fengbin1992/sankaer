@@ -33,6 +33,20 @@ export interface SystemInfo {
     pixelRatio: number;
 }
 
+export interface PlatformSocketMessage {
+    data: string | ArrayBuffer;
+}
+
+export interface PlatformSocket {
+    binaryType?: BinaryType;
+    onopen: (() => void) | null;
+    onclose: (() => void) | null;
+    onerror: ((error?: unknown) => void) | null;
+    onmessage: ((event: PlatformSocketMessage) => void) | null;
+    send(data: string | ArrayBuffer): void;
+    close(): void;
+}
+
 export interface IPlatform {
     login(): Promise<LoginResult>;
     pay(order: PayOrder): Promise<PayResult>;
@@ -40,7 +54,7 @@ export interface IPlatform {
     getSystemInfo(): SystemInfo;
     vibrate(type: 'light' | 'heavy'): void;
     setClipboard(text: string): void;
-    createWebSocket(url: string): WebSocket;
+    createWebSocket(url: string): PlatformSocket;
 }
 
 /** 根据运行环境自动选择平台适配器 */
@@ -49,6 +63,15 @@ export function createPlatform(): IPlatform {
         return new WechatPlatform();
     }
     return new WebPlatform();
+}
+
+let platformInstance: IPlatform | null = null;
+
+export function getPlatform(): IPlatform {
+    if (!platformInstance) {
+        platformInstance = createPlatform();
+    }
+    return platformInstance;
 }
 
 /** 微信小游戏平台 */
@@ -105,8 +128,8 @@ class WechatPlatform implements IPlatform {
         (wx as any).setClipboardData({ data: text });
     }
 
-    createWebSocket(url: string): WebSocket {
-        return (wx as any).connectSocket({ url }) as WebSocket;
+    createWebSocket(url: string): PlatformSocket {
+        return new WechatSocketAdapter(url);
     }
 }
 
@@ -133,9 +156,9 @@ class WebPlatform implements IPlatform {
     getSystemInfo(): SystemInfo {
         return {
             platform: 'web',
-            screenWidth: window.innerWidth,
-            screenHeight: window.innerHeight,
-            pixelRatio: window.devicePixelRatio || 1,
+            screenWidth: typeof window !== 'undefined' ? window.innerWidth : 720,
+            screenHeight: typeof window !== 'undefined' ? window.innerHeight : 1280,
+            pixelRatio: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
         };
     }
 
@@ -149,8 +172,76 @@ class WebPlatform implements IPlatform {
         navigator.clipboard?.writeText(text);
     }
 
-    createWebSocket(url: string): WebSocket {
-        return new WebSocket(url);
+    createWebSocket(url: string): PlatformSocket {
+        return new BrowserSocketAdapter(url);
+    }
+}
+
+class BrowserSocketAdapter implements PlatformSocket {
+    private readonly _socket: WebSocket;
+    onopen: (() => void) | null = null;
+    onclose: (() => void) | null = null;
+    onerror: ((error?: unknown) => void) | null = null;
+    onmessage: ((event: PlatformSocketMessage) => void) | null = null;
+
+    constructor(url: string) {
+        this._socket = new WebSocket(url);
+        this._socket.onopen = () => this.onopen?.();
+        this._socket.onclose = () => this.onclose?.();
+        this._socket.onerror = (event) => this.onerror?.(event);
+        this._socket.onmessage = (event) => {
+            this.onmessage?.({
+                data: event.data as string | ArrayBuffer,
+            });
+        };
+    }
+
+    get binaryType(): BinaryType {
+        return this._socket.binaryType;
+    }
+
+    set binaryType(value: BinaryType) {
+        this._socket.binaryType = value;
+    }
+
+    send(data: string | ArrayBuffer): void {
+        this._socket.send(data);
+    }
+
+    close(): void {
+        this._socket.close();
+    }
+}
+
+class WechatSocketAdapter implements PlatformSocket {
+    private readonly _task: any;
+    binaryType?: BinaryType;
+    onopen: (() => void) | null = null;
+    onclose: (() => void) | null = null;
+    onerror: ((error?: unknown) => void) | null = null;
+    onmessage: ((event: PlatformSocketMessage) => void) | null = null;
+
+    constructor(url: string) {
+        this._task = (wx as any).connectSocket({ url });
+        this._task.onOpen(() => this.onopen?.());
+        this._task.onClose(() => this.onclose?.());
+        this._task.onError((error: unknown) => this.onerror?.(error));
+        this._task.onMessage((message: { data: unknown }) => {
+            const data = message.data;
+            if (typeof data === 'string' || data instanceof ArrayBuffer) {
+                this.onmessage?.({ data });
+                return;
+            }
+            this.onmessage?.({ data: JSON.stringify(data ?? {}) });
+        });
+    }
+
+    send(data: string | ArrayBuffer): void {
+        this._task.send({ data });
+    }
+
+    close(): void {
+        this._task.close();
     }
 }
 

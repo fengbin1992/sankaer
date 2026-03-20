@@ -3,117 +3,129 @@
  * 显示胜负结果、搭档揭晓、金币变化
  */
 
+import { AudioManager } from '../core/AudioManager';
 import { NetworkManager } from '../network/NetworkManager';
 import { EventManager } from '../core/EventManager';
+import { LayoutManager } from '../core/LayoutManager';
 import { GameStore, cardToString } from '../stores/GameStore';
 import { MSG_C2S_READY } from '../protocol/MsgType';
+import { createButton, createScreenRoot, getScreenShell } from '../ui/Theme';
 
 export class ResultView {
     private container: HTMLDivElement | null = null;
 
     show(): void {
-        const store = GameStore.instance;
-
-        this.container = document.createElement('div');
-        this.container.id = 'result-view';
-        this.container.style.cssText = `
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            background: #1a1a2e; color: #fff; font-family: sans-serif;
-        `;
-
-        // 胜负标题
-        const title = document.createElement('h1');
-        const winText = store.winner === 'dealer' ? '庄家方胜' :
-                       store.winner === 'catcher' ? '抓分方胜' : '弃局';
-        title.textContent = winText;
-        title.style.cssText = `
-            font-size: 36px; margin-bottom: 16px;
-            color: ${store.winner === 'dealer' ? '#e94560' : '#16c79a'};
-        `;
-        this.container.appendChild(title);
-
-        // 搭档揭晓
-        if (store.partnerCard) {
-            const partner = document.createElement('p');
-            partner.textContent = `搭档牌: ${cardToString(store.partnerCard)} ${store.isSolo ? '(独庄 1v4)' : ''}`;
-            partner.style.cssText = 'font-size: 18px; color: #ccc; margin-bottom: 24px;';
-            this.container.appendChild(partner);
+        this.render();
+        if (this.container) {
+            document.body.appendChild(this.container);
         }
-
-        // 得分信息
-        const info = document.createElement('div');
-        info.style.cssText = 'text-align: center; margin-bottom: 24px; color: #aaa; font-size: 14px;';
-        info.innerHTML = `叫分: ${store.bidScore} | 抓分方得分: ${store.catcherScore}`;
-        this.container.appendChild(info);
-
-        // 结算列表
-        const table = document.createElement('div');
-        table.style.cssText = `
-            background: #16213e; border-radius: 12px; padding: 16px 24px;
-            min-width: 300px; max-width: 500px;
-        `;
-
-        store.settlements.forEach(s => {
-            if (!s.player_id) return;
-            const row = document.createElement('div');
-            row.style.cssText = `
-                display: flex; justify-content: space-between; padding: 8px 0;
-                border-bottom: 1px solid #333;
-            `;
-            const isMe = s.player_id === store.userId;
-            const roleText = s.role === 'dealer' ? '庄家' :
-                           s.role === 'partner' ? '搭档' : '抓分';
-            const amountColor = s.amount >= 0 ? '#16c79a' : '#e94560';
-            const sign = s.amount >= 0 ? '+' : '';
-
-            row.innerHTML = `
-                <span style="color:${isMe ? '#ffd700' : '#ccc'};">
-                    ${s.player_id.slice(0, 10)}${isMe ? ' (我)' : ''} [${roleText}]
-                </span>
-                <span style="color:${amountColor};font-weight:bold;">${sign}${s.amount}</span>
-            `;
-            table.appendChild(row);
-        });
-        this.container.appendChild(table);
-
-        // 按钮区
-        const btnArea = document.createElement('div');
-        btnArea.style.cssText = 'display: flex; gap: 16px; margin-top: 32px;';
-
-        const againBtn = document.createElement('button');
-        againBtn.textContent = '再来一局';
-        againBtn.style.cssText = `
-            padding: 14px 40px; font-size: 18px; border: none; border-radius: 8px;
-            background: #e94560; color: #fff; cursor: pointer;
-        `;
-        againBtn.onclick = () => {
-            NetworkManager.instance.sendMsg(MSG_C2S_READY);
-            store.phase = 'room';
-            EventManager.instance.emit('PHASE_CHANGE', 'room');
-        };
-        btnArea.appendChild(againBtn);
-
-        const backBtn = document.createElement('button');
-        backBtn.textContent = '返回大厅';
-        backBtn.style.cssText = `
-            padding: 14px 40px; font-size: 18px; border: none; border-radius: 8px;
-            background: #444; color: #fff; cursor: pointer;
-        `;
-        backBtn.onclick = () => {
-            store.phase = 'lobby';
-            EventManager.instance.emit('PHASE_CHANGE', 'lobby');
-        };
-        btnArea.appendChild(backBtn);
-
-        this.container.appendChild(btnArea);
-        document.body.appendChild(this.container);
+        EventManager.instance.on('LAYOUT_CHANGED', this.render);
     }
 
     hide(): void {
+        EventManager.instance.off('LAYOUT_CHANGED', this.render);
         if (this.container) {
             this.container.remove();
             this.container = null;
         }
     }
+
+    private render = (): void => {
+        const store = GameStore.instance;
+        const layout = LayoutManager.instance.mode;
+        const root = createScreenRoot('result-view');
+        const shell = getScreenShell(root);
+        shell.style.justifyContent = 'center';
+        shell.style.alignItems = 'center';
+
+        const panel = document.createElement('div');
+        panel.className = 'sk-panel sk-wood sk-pop-in';
+        panel.style.cssText = `
+            width:min(100%, ${layout === 'portrait' ? '560px' : '980px'});
+            padding:28px;
+            box-sizing:border-box;
+            display:grid;
+            grid-template-columns:${layout === 'portrait' ? '1fr' : '0.95fr 1.05fr'};
+            gap:22px;
+        `;
+
+        const titleBlock = document.createElement('div');
+        titleBlock.style.cssText = 'display:flex;flex-direction:column;gap:14px;justify-content:center;';
+        const winText = store.winner === 'dealer' ? '庄家方胜' :
+            store.winner === 'catcher' ? '抓分方胜' : '弃局';
+
+        titleBlock.innerHTML = `
+            <div class="sk-chip">${store.isSolo ? '独庄结算' : '团队结算'}</div>
+            <div class="sk-title" style="font-size: clamp(34px, 6vw, 56px); color:${store.winner === 'dealer' ? '#ffe1ba' : '#d9ffe8'};">${winText}</div>
+            <div class="sk-muted" style="line-height:1.8;">
+                叫分 ${store.bidScore} · 抓分方得分 ${store.catcherScore}
+                ${store.partnerCard ? `· 搭档牌 ${cardToString(store.partnerCard)}` : ''}
+                ${store.isSolo ? ' · 独庄 1v4' : ''}
+            </div>
+        `;
+
+        const table = document.createElement('div');
+        table.className = 'sk-panel';
+        table.style.cssText = 'padding:18px;';
+
+        store.settlements.forEach((settlement) => {
+            if (!settlement.player_id) {
+                return;
+            }
+
+            const row = document.createElement('div');
+            const isMe = settlement.player_id === store.userId;
+            const roleText = settlement.role === 'dealer' ? '庄家' :
+                settlement.role === 'partner' ? '搭档' : '抓分';
+            const amountColor = settlement.amount >= 0 ? '#80efac' : '#ff9986';
+            const sign = settlement.amount >= 0 ? '+' : '';
+
+            row.style.cssText = `
+                display:flex;
+                justify-content:space-between;
+                align-items:center;
+                gap:12px;
+                padding:14px 10px;
+                border-bottom:1px solid rgba(255,255,255,0.08);
+                color:${isMe ? '#fff0cb' : '#d8e0e7'};
+            `;
+            row.innerHTML = `
+                <div>
+                    <div style="font-family:'Segoe UI Semibold',sans-serif;font-size:14px;">${settlement.player_id.slice(0, 12)}${isMe ? ' · 我' : ''}</div>
+                    <div class="sk-muted" style="font-size:12px;">${roleText} · 倍率 ${settlement.multiplier}x</div>
+                </div>
+                <div style="font-family:'Segoe UI Semibold',sans-serif;font-size:22px;color:${amountColor};">${sign}${settlement.amount}</div>
+            `;
+            table.appendChild(row);
+        });
+
+        const btnArea = document.createElement('div');
+        btnArea.style.cssText = 'display:flex;gap:14px;flex-wrap:wrap;margin-top:16px;';
+
+        const againBtn = createButton('再来一局', 'primary', () => {
+            AudioManager.instance.playSfx('click');
+            NetworkManager.instance.sendMsg(MSG_C2S_READY);
+            store.phase = 'room';
+            EventManager.instance.emit('PHASE_CHANGE', 'room');
+        });
+
+        const backBtn = createButton('返回大厅', 'ghost', () => {
+            AudioManager.instance.playSfx('switch');
+            store.phase = 'lobby';
+            EventManager.instance.emit('PHASE_CHANGE', 'lobby');
+        });
+
+        btnArea.appendChild(againBtn);
+        btnArea.appendChild(backBtn);
+        titleBlock.appendChild(btnArea);
+
+        panel.appendChild(titleBlock);
+        panel.appendChild(table);
+        shell.appendChild(panel);
+
+        if (this.container) {
+            this.container.replaceWith(root);
+        }
+        this.container = root;
+    };
 }

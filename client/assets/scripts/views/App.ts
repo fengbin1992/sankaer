@@ -4,6 +4,8 @@
  */
 
 import { EventManager } from '../core/EventManager';
+import { AudioManager } from '../core/AudioManager';
+import { GameManager } from '../core/GameManager';
 import { GameStore, GamePhase } from '../stores/GameStore';
 import { LoginView } from './LoginView';
 import { LobbyView } from './LobbyView';
@@ -20,6 +22,8 @@ export class App {
     private resultView = new ResultView();
 
     start(): void {
+        void GameManager.instance.init();
+
         // 初始化 GameStore（注册消息处理器）
         GameStore.instance;
 
@@ -33,14 +37,18 @@ export class App {
         });
 
         EventManager.instance.on('GAME_START', () => {
+            AudioManager.instance.playSfx('deal', 0.55);
             this.switchView('dealing');
         });
 
         EventManager.instance.on('DEAL_CARDS', () => {
+            AudioManager.instance.playSfx('deal', 0.65);
             this.switchView('playing');
         });
 
         EventManager.instance.on('GAME_RESULT', () => {
+            const mySettlement = GameStore.instance.settlements.find((settlement) => settlement.player_id === GameStore.instance.userId);
+            AudioManager.instance.playSfx(mySettlement && mySettlement.amount >= 0 ? 'win' : 'lose');
             this.switchView('result');
         });
 

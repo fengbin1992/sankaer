@@ -7,11 +7,12 @@ import { EventManager } from '../core/EventManager';
 import { MessageRouter } from './MessageRouter';
 import { encode, decode } from '../protocol/ProtobufCodec';
 import { MSG_PING } from '../protocol/MsgType';
+import { getPlatform, PlatformSocket } from '../platform/PlatformAdapter';
 
 export class NetworkManager {
     private static _instance: NetworkManager;
 
-    private _ws: WebSocket | null = null;
+    private _ws: PlatformSocket | null = null;
     private _url: string = '';
     private _token: string = '';
     private _reconnectAttempts = 0;
@@ -19,6 +20,7 @@ export class NetworkManager {
     private _heartbeatTimer: number | null = null;
     private _msgQueue: ArrayBuffer[] = [];
     private _isConnected = false;
+    private _manualClose = false;
 
     static get instance(): NetworkManager {
         if (!this._instance) {
@@ -35,10 +37,11 @@ export class NetworkManager {
     connect(url: string, token: string): Promise<void> {
         this._url = url;
         this._token = token;
+        this._manualClose = false;
 
         return new Promise((resolve, reject) => {
-            // TODO: 平台适配 - 微信用 wx.connectSocket
-            this._ws = new WebSocket(`${url}?token=${token}`);
+            const queryJoin = url.includes('?') ? '&' : '?';
+            this._ws = getPlatform().createWebSocket(`${url}${queryJoin}token=${encodeURIComponent(token)}`);
             this._ws.binaryType = 'arraybuffer';
 
             this._ws.onopen = () => {
@@ -54,10 +57,12 @@ export class NetworkManager {
                 this._isConnected = false;
                 this.stopHeartbeat();
                 EventManager.instance.emit('NETWORK_CLOSED');
-                this.autoReconnect();
+                if (!this._manualClose) {
+                    this.autoReconnect();
+                }
             };
 
-            this._ws.onmessage = (event: MessageEvent) => {
+            this._ws.onmessage = (event) => {
                 const data = event.data;
                 if (typeof data === 'string') {
                     // JSON 文本消息
@@ -68,7 +73,8 @@ export class NetworkManager {
                 }
             };
 
-            this._ws.onerror = () => {
+            this._ws.onerror = (error) => {
+                console.error('[Network] WebSocket error:', error);
                 reject(new Error('WebSocket connection failed'));
             };
         });
@@ -91,7 +97,7 @@ export class NetworkManager {
 
     /** 断开连接 */
     disconnect(): void {
-        this._maxReconnect = 0; // 阻止自动重连
+        this._manualClose = true;
         if (this._ws) {
             this._ws.close();
             this._ws = null;
