@@ -157,6 +157,17 @@
 
 | 日期 | 任务编号 | 完成内容 | 备注 |
 |------|----------|----------|------|
-| | | | |
-| | | | |
-| | | | |
+| 2026-03-16 | 1.1~1.4 | WebSocket 网关服务完整实现 | server/internal/gateway/ (server.go, connection.go, router.go, heartbeat.go) |
+| 2026-03-16 | 2.1~2.2 | 匹配服务完整实现 | server/internal/match/ (service.go, queue.go, matcher.go) |
+| 2026-03-16 | 3.1~3.2 | 用户服务完整实现 | server/internal/user/ (service.go, auth.go, coin.go, model.go) |
+| 2026-03-16 | 4.1~4.2 | 游戏逻辑服务与网关打通 | server/internal/gameservice/ (service.go, handler.go, broadcast.go) |
+| 2026-03-16 | 5.1~5.2 | 客户端协议层（JSON Packet编解码） | client/assets/scripts/protocol/ (MsgType.ts, ProtobufCodec.ts), 更新 NetworkManager.ts, MessageRouter.ts |
+| 2026-03-16 | 6.1~6.6 | 客户端基础UI（色块/文字版） | client/assets/scripts/views/ (LoginView, LobbyView, RoomView, GameView, ResultView, App.ts), stores/GameStore.ts |
+| 2026-03-16 | - | 编译验证通过 | Go build ./... 通过，26个单元测试全部PASS |
+
+### 技术决策
+
+- **序列化方案**: MVP 阶段使用 JSON 编码（非 Protobuf 二进制），后续可平滑迁移
+- **客户端 UI**: 使用纯 HTML DOM 创建色块+文字版 UI，不依赖 Cocos Creator 编辑器
+- **NATS 主题设计**: `user.c2s` / `match.c2s` / `game.{roomId}.c2s` / `gateway.s2c.{userId}` / `gateway.broadcast`
+- **网关鉴权**: 支持 `guest:{userId}` 简易模式 + JWT 标准模式

@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"go.uber.org/zap"
+	"sankaer/internal/gateway"
 	"sankaer/internal/pkg/config"
 	"sankaer/internal/pkg/logger"
 	pkgRedis "sankaer/internal/pkg/redis"
@@ -41,12 +42,18 @@ func main() {
 
 	zap.L().Info("WebSocket 网关启动", zap.Int("port", cfg.Server.Port))
 
-	// TODO: 启动 WebSocket 服务器
-	// gateway.NewServer(cfg).Start()
+	// 启动 WebSocket 服务器
+	srv := gateway.NewServer(cfg)
+	go func() {
+		if err := srv.Start(); err != nil {
+			zap.L().Fatal("网关启动失败", zap.Error(err))
+		}
+	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
+	srv.Stop()
 	zap.L().Info("网关正在关闭...")
 }

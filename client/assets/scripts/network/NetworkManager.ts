@@ -5,6 +5,8 @@
 
 import { EventManager } from '../core/EventManager';
 import { MessageRouter } from './MessageRouter';
+import { encode, decode } from '../protocol/ProtobufCodec';
+import { MSG_PING } from '../protocol/MsgType';
 
 export class NetworkManager {
     private static _instance: NetworkManager;
@@ -56,9 +58,14 @@ export class NetworkManager {
             };
 
             this._ws.onmessage = (event: MessageEvent) => {
-                const data = event.data as ArrayBuffer;
-                // TODO: Protobuf 解码
-                MessageRouter.dispatch(data);
+                const data = event.data;
+                if (typeof data === 'string') {
+                    // JSON 文本消息
+                    MessageRouter.dispatchJSON(data);
+                } else {
+                    // 二进制消息
+                    MessageRouter.dispatch(data as ArrayBuffer);
+                }
             };
 
             this._ws.onerror = () => {
@@ -74,6 +81,12 @@ export class NetworkManager {
         } else {
             this._msgQueue.push(data);
         }
+    }
+
+    /** 发送协议消息 */
+    sendMsg(msgType: number, payload?: any): void {
+        const data = encode(msgType, payload);
+        this.send(data);
     }
 
     /** 断开连接 */
@@ -104,7 +117,7 @@ export class NetworkManager {
     /** 心跳保活 */
     private startHeartbeat(): void {
         this._heartbeatTimer = window.setInterval(() => {
-            // TODO: 发送 PING 消息
+            this.sendMsg(MSG_PING);
         }, 30000);
     }
 

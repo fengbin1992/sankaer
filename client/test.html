@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>三卡二 - 联调测试（全自动5人）</title>
+    <style>
+        body { font-family: sans-serif; background: #1a1a2e; color: #fff; padding: 20px; }
+        #log { background: #0a0a1a; padding: 12px; border-radius: 8px; height: 500px; overflow-y: auto; font-size: 12px; margin-top: 12px; white-space: pre-wrap; }
+        button { padding: 8px 16px; margin: 4px; border: none; border-radius: 4px; background: #e94560; color: #fff; cursor: pointer; font-size: 14px; }
+        button:hover { opacity: 0.8; }
+        .section { margin: 12px 0; padding: 12px; background: #16213e; border-radius: 8px; }
+        h3 { margin: 0 0 8px 0; color: #e94560; }
+        .ok { color: #16c79a; }
+        .err { color: #e94560; }
+        .info { color: #7ec8e3; }
+        .warn { color: #f5a623; }
+        .bot { color: #b0b0b0; }
+        #stats { margin-top: 8px; font-size: 14px; color: #f5a623; }
+    </style>
+</head>
+<body>
+    <h1>三卡二 全自动联调测试</h1>
+
+    <div class="section">
+        <h3>一键全流程测试</h3>
+        <button onclick="startFullTest()">启动全自动测试（5人）</button>
+        <button onclick="stopAll()">停止所有连接</button>
+        <div id="stats"></div>
+    </div>
+
+    <div class="section">
+        <h3>手动控制</h3>
+        <button onclick="connectAndLogin(0)">连接玩家0</button>
+        <button onclick="allMatch()">全员匹配</button>
+        <button onclick="allReady()">全员准备</button>
+    </div>
+
+    <div id="log"></div>
+
+    <script>
+        // === 常量 ===
+        const MSG = {
+            PING: 9001, PONG: 9002,
+            C2S_GUEST_LOGIN: 1001,
+            C2S_QUICK_MATCH: 1101, C2S_CANCEL_MATCH: 1102,
+            C2S_LEAVE_ROOM: 1105, C2S_READY: 1106, C2S_CANCEL_READY: 1107,
+            C2S_BID: 1202, C2S_PASS_BID: 1203,
+            C2S_FORFEIT: 1204, C2S_SET_BOTTOM: 1205, C2S_CALL_PARTNER: 1206,
+            C2S_PLAY_CARD: 1207,
+            S2C_LOGIN_RESULT: 2001,
+            S2C_MATCH_UPDATE: 2101, S2C_ROOM_JOINED: 2102,
+            S2C_PLAYER_JOINED: 2103, S2C_PLAYER_LEFT: 2104,
+            S2C_READY_UPDATE: 2105,
+            S2C_ROOM_STATE: 2201, S2C_DEAL_CARDS: 2202,
+            S2C_FLIP_RESULT: 2203, S2C_BID_UPDATE: 2204,
+            S2C_BID_RESULT: 2205, S2C_ALL_PASSED: 2206,
+            S2C_BOTTOM_CARDS: 2207, S2C_PARTNER_CALLED: 2208,
+            S2C_TURN: 2209, S2C_CARD_PLAYED: 2210,
+            S2C_ROUND_RESULT: 2211, S2C_GAME_RESULT: 2212,
+            S2C_GAME_START: 2213,
+            S2C_ERROR: 2999,
+        };
+
+        // === 玩家状态 ===
+        const players = []; // 5个玩家状态
+        let trumpSuit = 0;  // 全局主花色
+        let leadCard = null; // 当前轮领出的牌
+        let roundCardCount = 0; // 当前轮已出牌数
+        let currentRound = 0;
+        let gameFinished = false;
+        // 游戏阶段: 'idle' | 'bidding' | 'bottom' | 'calling' | 'playing'
+        let gamePhase = 'idle';
+        let dealerId = ''; // 庄家ID
+        let hasBidder = false; // 叫分阶段是否已有人叫分
+
+        function suitStr(s) { return {0:'🃏',1:'♠',2:'♥',3:'♦',4:'♣'}[s] || '?'; }
+        function rankStr(r) {
+            if (r === 14) return 'JKs';
+            if (r === 15) return 'JKb';
+            if (r === 1) return 'A';
+            if (r <= 10) return String(r);
+            return {11:'J',12:'Q',13:'K'}[r] || '?';
+        }
+        function cardStr(c) { return c ? suitStr(c.suit) + rankStr(c.rank) : '??'; }
+
+        function log(msg, cls = '') {
+            const el = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            el.innerHTML += `<span class="${cls}">[${time}] ${msg}</span>\n`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function updateStats() {
+            const parts = players.map((p, i) => {
+                if (!p) return `P${i}: -`;
+                const hand = p.hand ? p.hand.length : 0;
+                return `P${i}(${p.userId?.slice(-4) || '?'}): ${hand}牌`;
+            });
+            document.getElementById('stats').textContent =
+                `${parts.join(' | ')} | 轮次:${currentRound}/10 | 主花色:${suitStr(trumpSuit)}`;
+        }
+
+        // === 牌规则辅助 ===
+        function isTrump(card) {
+            if (!card) return false;
+            if (card.rank === 14 || card.rank === 15) return true; // 大小王
+            if (card.rank === 2) return true; // 所有2
+            if (card.suit === trumpSuit) return true; // 主花色
+            return false;
+        }
+
+        // 选择合法的跟牌
+        function selectValidCard(hand, lead) {
+            if (!lead) {
+                // 领出者，出任意牌（优先出小牌）
+                return hand[hand.length - 1] || hand[0];
+            }
+
+            if (isTrump(lead)) {
+                // 领出主牌 → 有主牌必须跟
+                const trumpCards = hand.filter(c => isTrump(c));
+                if (trumpCards.length > 0) return trumpCards[0];
+                // 无主牌，任意出
+                return hand[0];
+            } else {
+                // 领出副牌 → 有同花色必须跟
+                const sameSuit = hand.filter(c => !isTrump(c) && c.suit === lead.suit);
+                if (sameSuit.length > 0) return sameSuit[0];
+                // 无同花色，任意出
+                return hand[0];
+            }
+        }
+
+        // 从手牌中移除一张牌
+        function removeFromHand(hand, card) {
+            const idx = hand.findIndex(c => c.suit === card.suit && c.rank === card.rank);
+            if (idx >= 0) hand.splice(idx, 1);
+        }
+
+        // 选择搭档牌（非手牌中的A，避免叫自己）
+        function selectPartnerCard(hand) {
+            // 按优先级找一张不在手牌中的非主牌A
+            const suits = [1, 2, 3, 4]; // ♠♥♦♣
+            for (const s of suits) {
+                if (s === trumpSuit) continue; // 跳过主花色
+                const hasIt = hand.some(c => c.suit === s && c.rank === 1);
+                if (!hasIt) {
+                    return { suit: s, rank: 1 }; // 叫这个花色的A
+                }
+            }
+            // 都有的话就叫第一个非主花色的A
+            for (const s of suits) {
+                if (s !== trumpSuit) return { suit: s, rank: 1 };
+            }
+            return { suit: 1, rank: 1 };
+        }
+
+        // === 创建玩家连接 ===
+        function createPlayer(index) {
+            const deviceId = `auto-test-${Date.now()}-${index}`;
+            const p = {
+                index,
+                deviceId,
+                userId: '',
+                ws: null,
+                seq: 0,
+                hand: [],
+                isDealer: false,
+                roomId: '',
+                retryCount: 0, // 出牌错误重试计数
+                retryCardIdx: 0, // 重试时从哪张牌开始
+            };
+            players[index] = p;
+            return p;
+        }
+
+        function pSend(p, msgType, payload = {}) {
+            if (!p.ws || p.ws.readyState !== WebSocket.OPEN) return;
+            p.ws.send(JSON.stringify({ msg_type: msgType, seq: ++p.seq, payload }));
+        }
+
+        function connectAndLogin(index) {
+            const p = players[index] || createPlayer(index);
+            const tokenParam = 'guest:' + p.deviceId;
+            p.ws = new WebSocket(`ws://localhost:8080/ws?token=${encodeURIComponent(tokenParam)}`);
+
+            p.ws.onopen = () => {
+                log(`P${index} 已连接 (deviceId=${p.deviceId})`, 'ok');
+                // 自动登录
+                setTimeout(() => {
+                    log(`P${index} 发送登录请求...`, 'bot');
+                    pSend(p, MSG.C2S_GUEST_LOGIN, { device_id: p.deviceId });
+                }, 300);
+                // 登录重试：5秒后如果还没登录成功，重发
+                setTimeout(() => {
+                    if (!p.userId) {
+                        log(`P${index} 登录重试...`, 'warn');
+                        pSend(p, MSG.C2S_GUEST_LOGIN, { device_id: p.deviceId });
+                    }
+                }, 5000);
+            };
+
+            p.ws.onmessage = (evt) => {
+                try {
+                    const pkt = JSON.parse(evt.data);
+                    handlePlayerMessage(p, pkt);
+                } catch(e) {
+                    log(`P${index} 解析失败: ${e.message}`, 'err');
+                }
+            };
+
+            p.ws.onerror = () => log(`P${index} WS错误`, 'err');
+            p.ws.onclose = (e) => log(`P${index} 断开 code=${e.code}`, 'err');
+
+            // 心跳
+            p.heartbeat = setInterval(() => {
+                if (p.ws && p.ws.readyState === WebSocket.OPEN) {
+                    pSend(p, MSG.PING);
+                }
+            }, 20000);
+        }
+
+        // === 消息处理 ===
+        function handlePlayerMessage(p, pkt) {
+            const mt = pkt.msg_type;
+            const d = pkt.payload;
+            const i = p.index;
+
+            switch(mt) {
+                case MSG.PONG:
+                    break;
+
+                case MSG.S2C_LOGIN_RESULT:
+                    if (d.success) {
+                        p.userId = d.player?.user_id || '';
+                        log(`P${i} 登录成功: ${p.userId}, coins=${d.coins}`, 'ok');
+                    } else {
+                        log(`P${i} 登录失败: ${d.error_msg}`, 'err');
+                    }
+                    break;
+
+                case MSG.S2C_MATCH_UPDATE:
+                    log(`P${i} 匹配中: waiting=${d.waiting_count}`, 'bot');
+                    break;
+
+                case MSG.S2C_ROOM_JOINED:
+                    p.roomId = d.room_id;
+                    if (i === 0) log(`进入房间 ${d.room_id}, 玩家: ${(d.players||[]).map(x=>x.user_id?.slice(-4)).join(',')}`, 'ok');
+                    // 自动准备（延迟避免并发）
+                    setTimeout(() => {
+                        pSend(p, MSG.C2S_READY);
+                        log(`P${i} 自动准备`, 'bot');
+                    }, 500 + i * 300);
+                    break;
+
+                case MSG.S2C_READY_UPDATE:
+                    if (i === 0) log(`准备: ${d.user_id?.slice(-4)} ready=${d.is_ready}`, 'bot');
+                    break;
+
+                case MSG.S2C_GAME_START:
+                    if (i === 0) {
+                        log(`游戏开始!`, 'ok');
+                        gameFinished = false;
+                        gamePhase = 'idle';
+                        currentRound = 0;
+                        roundCardCount = 0;
+                        leadCard = null;
+                        dealerId = '';
+                        hasBidder = false;
+                    }
+                    break;
+
+                case MSG.S2C_FLIP_RESULT:
+                    if (i === 0) log(`翻牌: ${cardStr(d.card)}, 首家=${d.first_dealer_id?.slice(-4)}`, 'info');
+                    break;
+
+                case MSG.S2C_DEAL_CARDS:
+                    p.hand = d.cards || [];
+                    p.retryCount = 0;
+                    p.retryCardIdx = 0;
+                    if (i === 0) {
+                        gamePhase = 'bidding';
+                        hasBidder = false;
+                        log(`发牌完成，5人各${p.hand.length}张`, 'ok');
+                    }
+                    updateStats();
+                    break;
+
+                case MSG.S2C_BID_UPDATE:
+                    if (i === 0 && d.score > 0) hasBidder = true;
+                    if (i === 0) log(`叫分: ${d.player_id?.slice(-4)} bid=${d.score} suit=${d.suit}`, 'info');
+                    break;
+
+                case MSG.S2C_BID_RESULT:
+                    trumpSuit = d.trump_suit || d.suit || 0;
+                    dealerId = d.dealer_id || '';
+                    p.isDealer = (d.dealer_id === p.userId);
+                    if (i === 0) {
+                        gamePhase = 'bottom';
+                        log(`叫分结果: dealer=${d.dealer_id?.slice(-4)}, score=${d.score}, trump=${suitStr(trumpSuit)}`, 'ok');
+                    }
+                    if (p.isDealer) log(`P${i} 我是庄家!`, 'warn');
+                    break;
+
+                case MSG.S2C_BOTTOM_CARDS:
+                    // 庄家收到底牌，加入手牌
+                    const bottomCards = d.cards || [];
+                    p.hand = p.hand.concat(bottomCards);
+                    log(`P${i} 收到底牌: ${bottomCards.map(c=>cardStr(c)).join(' ')} (手牌${p.hand.length}张)`, 'ok');
+                    updateStats();
+                    break;
+
+                case MSG.S2C_PARTNER_CALLED:
+                    if (i === 0) {
+                        gamePhase = 'playing';
+                        roundCardCount = 0;
+                        leadCard = null;
+                        log(`搭档牌: ${cardStr(d.card)}, solo=${d.is_solo}`, 'info');
+                    }
+                    break;
+
+                case MSG.S2C_TURN:
+                    handleTurn(p, d);
+                    break;
+
+                case MSG.S2C_CARD_PLAYED: {
+                    // 只用第一个player的回调来更新全局状态
+                    if (i === 0) {
+                        roundCardCount++;
+                        if (roundCardCount === 1) {
+                            leadCard = d.card;
+                        }
+                    }
+                    // 如果出牌的是自己，从手牌移除
+                    if (d.player_id === p.userId) {
+                        removeFromHand(p.hand, d.card);
+                    }
+                    if (i === 0) {
+                        log(`出牌: ${d.player_id?.slice(-4)}→${cardStr(d.card)} (本轮${roundCardCount}/5)`, 'info');
+                        updateStats();
+                    }
+                    break;
+                }
+
+                case MSG.S2C_ROUND_RESULT:
+                    if (i === 0) {
+                        currentRound++;
+                        roundCardCount = 0;
+                        leadCard = null;
+                        log(`轮${currentRound}结束: winner=${d.winner_id?.slice(-4)}, 抓分方总分=${d.total_catcher_score}`, 'ok');
+                        updateStats();
+                    }
+                    break;
+
+                case MSG.S2C_GAME_RESULT:
+                    gameFinished = true;
+                    log(`\n========= 游戏结算 =========`, 'ok');
+                    log(`P${i} 结果: winner=${d.winner}, bidScore=${d.bid_score}, catcherScore=${d.catcher_score}`, 'ok');
+                    log(`  solo=${d.is_solo}, zeroClear=${d.is_zero_clear}, lastHandBonus=${d.is_last_hand_bonus}`, 'ok');
+                    if (d.settlements) {
+                        let total = 0;
+                        d.settlements.forEach(s => {
+                            if (s.player_id) {
+                                log(`  ${s.player_id?.slice(-4)}: role=${s.role}, amount=${s.amount}`, s.amount >= 0 ? 'ok' : 'err');
+                                total += (s.amount || 0);
+                            }
+                        });
+                        log(`  金币总和=${total} (应为0)`, total === 0 ? 'ok' : 'err');
+                    }
+                    log(`========= 测试完成 =========\n`, 'ok');
+                    break;
+
+                case MSG.S2C_ERROR:
+                    log(`P${i} 错误: [${d.code}] ${d.message}`, 'err');
+                    // 如果是出牌错误，尝试出下一张牌
+                    if (d.code === 4 && p.retryCount < p.hand.length) {
+                        log(`P${i} 出牌被拒，尝试下一张...`, 'warn');
+                        p.retryCardIdx++;
+                        p.retryCount++;
+                        retryPlayCard(p);
+                    }
+                    break;
+
+                case MSG.S2C_ROOM_STATE:
+                    log(`P${i} 房间全量: ${JSON.stringify(d).substring(0, 150)}...`, 'bot');
+                    break;
+
+                default:
+                    log(`P${i} 未知[${mt}]: ${JSON.stringify(d).substring(0, 100)}`, 'bot');
+            }
+        }
+
+        // === 轮到操作处理 ===
+        function handleTurn(p, d) {
+            const i = p.index;
+            const isMyTurn = d.player_id === p.userId;
+
+            if (!isMyTurn) {
+                return;
+            }
+
+            log(`P${i} === 轮到我! phase=${gamePhase} hand=${p.hand.length} ===`, 'warn');
+
+            // 阶段自动推进：庄家扣底后收到Turn → 进入calling
+            if (gamePhase === 'bottom' && p.isDealer && p.hand.length === 10) {
+                gamePhase = 'calling';
+            }
+
+            setTimeout(() => {
+                autoAction(p);
+            }, 300 + Math.random() * 500);
+        }
+
+        function autoAction(p) {
+            const i = p.index;
+
+            log(`P${i} autoAction: phase=${gamePhase}, hand=${p.hand.length}, isDealer=${p.isDealer}`, 'bot');
+
+            switch(gamePhase) {
+                case 'bidding': {
+                    // 叫分：第一个被问到的人叫80，其余不叫
+                    if (!hasBidder) {
+                        hasBidder = true;
+                        log(`P${i} 自动叫分 80 ♠`, 'warn');
+                        pSend(p, MSG.C2S_BID, { score: 80, suit: 1 });
+                    } else {
+                        log(`P${i} 自动不叫`, 'warn');
+                        pSend(p, MSG.C2S_PASS_BID);
+                    }
+                    break;
+                }
+
+                case 'bottom': {
+                    if (!p.isDealer) {
+                        log(`P${i} 非庄家，等待庄家扣底`, 'bot');
+                        return;
+                    }
+                    // 庄家扣底：选4张最小的非分值非主牌
+                    const sorted = [...p.hand].sort((a, b) => {
+                        const aVal = isTrump(a) ? 100 : (a.rank === 5 || a.rank === 10 || a.rank === 13) ? 50 : (a.rank === 1 ? 40 : a.rank);
+                        const bVal = isTrump(b) ? 100 : (b.rank === 5 || b.rank === 10 || b.rank === 13) ? 50 : (b.rank === 1 ? 40 : b.rank);
+                        return aVal - bVal;
+                    });
+                    const bottom = sorted.slice(0, 4);
+                    log(`P${i} 自动扣底: ${bottom.map(c=>cardStr(c)).join(' ')}`, 'warn');
+                    pSend(p, MSG.C2S_SET_BOTTOM, { cards: bottom });
+                    // 从手牌移除
+                    bottom.forEach(bc => removeFromHand(p.hand, bc));
+                    updateStats();
+                    break;
+                }
+
+                case 'calling': {
+                    if (!p.isDealer) {
+                        log(`P${i} 非庄家，等待庄家叫搭档`, 'bot');
+                        return;
+                    }
+                    const partnerCard = selectPartnerCard(p.hand);
+                    log(`P${i} 自动叫搭档: ${cardStr(partnerCard)}`, 'warn');
+                    pSend(p, MSG.C2S_CALL_PARTNER, { card: partnerCard });
+                    break;
+                }
+
+                case 'playing': {
+                    if (p.hand.length <= 0) {
+                        log(`P${i} 无牌可出!`, 'err');
+                        return;
+                    }
+                    p.retryCount = 0;
+                    p.retryCardIdx = 0;
+                    const isLead = (roundCardCount === 0);
+                    const card = selectValidCard(p.hand, isLead ? null : leadCard);
+                    if (card) {
+                        log(`P${i} >> 出${cardStr(card)} 剩${p.hand.length - 1} (lead=${isLead?'领出':cardStr(leadCard)})`, 'warn');
+                        pSend(p, MSG.C2S_PLAY_CARD, { card });
+                    } else {
+                        log(`P${i} selectValidCard返回null!`, 'err');
+                    }
+                    break;
+                }
+
+                default:
+                    log(`P${i} 未知阶段: ${gamePhase}`, 'err');
+            }
+        }
+
+        // 出牌失败后重试（换一张牌出）
+        function retryPlayCard(p) {
+            if (p.retryCardIdx >= p.hand.length) {
+                log(`P${p.index} 所有牌都被拒绝了!`, 'err');
+                return;
+            }
+            const card = p.hand[p.retryCardIdx];
+            log(`P${p.index} 重试出: ${cardStr(card)}`, 'warn');
+            setTimeout(() => {
+                pSend(p, MSG.C2S_PLAY_CARD, { card });
+            }, 200);
+        }
+
+        // === 全自动测试流程 ===
+        async function startFullTest() {
+            log('====== 启动全自动5人联调测试 ======', 'ok');
+            gameFinished = false;
+            trumpSuit = 0;
+            leadCard = null;
+            roundCardCount = 0;
+            currentRound = 0;
+            gamePhase = 'idle';
+            dealerId = '';
+            hasBidder = false;
+
+            // 1. 创建并连接5个玩家
+            for (let i = 0; i < 5; i++) {
+                createPlayer(i);
+                connectAndLogin(i);
+                await sleep(1000);
+            }
+
+            // 2. 等待所有玩家登录成功
+            log('等待登录...', 'info');
+            await waitFor(() => players.every(p => p && p.userId), 30000);
+            log('全部登录成功!', 'ok');
+
+            // 3. 全员匹配
+            log('全员开始匹配...', 'info');
+            for (let i = 0; i < 5; i++) {
+                pSend(players[i], MSG.C2S_QUICK_MATCH, { tier: 10 });
+                await sleep(200);
+            }
+
+            // 4. 后续流程由消息回调自动驱动
+            log('匹配进行中，后续流程自动执行...', 'info');
+        }
+
+        function allMatch() {
+            players.forEach(p => {
+                if (p && p.ws) pSend(p, MSG.C2S_QUICK_MATCH, { tier: 10 });
+            });
+        }
+
+        function allReady() {
+            players.forEach(p => {
+                if (p && p.ws) pSend(p, MSG.C2S_READY);
+            });
+        }
+
+        function stopAll() {
+            players.forEach(p => {
+                if (p) {
+                    if (p.heartbeat) clearInterval(p.heartbeat);
+                    if (p.ws) p.ws.close();
+                }
+            });
+            players.length = 0;
+            log('所有连接已关闭', 'info');
+        }
+
+        // === 工具函数 ===
+        function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+        function waitFor(cond, timeout = 10000) {
+            return new Promise((resolve, reject) => {
+                const start = Date.now();
+                const check = () => {
+                    if (cond()) return resolve();
+                    if (Date.now() - start > timeout) return reject(new Error('等待超时'));
+                    setTimeout(check, 300);
+                };
+                check();
+            });
+        }
+    </script>
+</body>
+</html>

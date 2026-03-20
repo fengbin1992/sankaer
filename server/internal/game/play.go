@@ -87,6 +87,7 @@ func resolveRound(room *Room) {
 
 	if room.CurrentRound >= TotalRounds {
 		// 10轮打完，进入结算
+		room.State = StateSettling
 		return
 	}
 

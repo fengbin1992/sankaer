@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(for d:*)",
+      "Bash(do echo:*)",
+      "Read(//d/AINETProject/qp/sankaer/**)",
+      "Bash(done)"
+    ]
+  }
+}

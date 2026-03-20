@@ -182,8 +182,8 @@ func TestFullGameFlow(t *testing.T) {
 
 	// 10. 结算
 	result := Settle(room, 10) // 10倍场
-	t.Logf("抓分方得分: %d, 叫分: %d, 抓分方赢: %v", result.CatcherScore, result.BidScore, result.CatcherWin)
-	t.Logf("特殊倍数: %d, 清零: %v, 关底: %v", result.SpecialMulti, result.IsZeroClear, result.IsLastHandBonus)
+	t.Logf("抓分方得分: %d, 叫分: %d, 抓分方赢: %v, 平局: %v", result.CatcherScore, result.BidScore, result.CatcherWin, result.IsDraw)
+	t.Logf("特殊倍数: %d, 清零: %v, 扣底: %v", result.SpecialMulti, result.IsZeroClear, result.IsBottomDoubled)
 
 	for i := 0; i < MaxPlayers; i++ {
 		teamStr := "抓分方"

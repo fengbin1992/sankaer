@@ -16,22 +16,22 @@ func CalcBottomPoints(bottom []Card) int {
 
 // ScoreResult 计分结果
 type ScoreResult struct {
-	CatcherScore   int  // 抓分方总得分
-	DealerScore    int  // 庄家方总得分（100 - 抓分方得分，正常情况）
+	CatcherScore   int  // 抓分方总得分（含扣底）
+	DealerScore    int  // 庄家方总得分
 	BottomPoints   int  // 底牌分值
-	LastHandCatcher bool // 最后一手是否抓分方赢
+	BottomDoubled  bool // 是否触发扣底翻倍
 }
 
 // CalcFinalScore 计算最终得分（含底牌处理）
 func CalcFinalScore(room *Room) ScoreResult {
 	result := ScoreResult{
-		CatcherScore:   room.PointsTaken[1],
-		BottomPoints:   CalcBottomPoints(room.Bottom),
-		LastHandCatcher: !room.Teams[room.LastWinnerIdx], // 最后一手赢家不是庄家方
+		CatcherScore: room.PointsTaken[1],
+		BottomPoints: CalcBottomPoints(room.Bottom),
 	}
 
-	// 底牌分值处理：抓分方赢最后一手时，底牌分×2计入抓分方
-	if result.LastHandCatcher {
+	// 扣底：抓分方基础得分 >= 叫分时，底牌分×2计入抓分方
+	if result.CatcherScore >= room.BidScore {
+		result.BottomDoubled = true
 		result.CatcherScore += result.BottomPoints * 2
 	}
 

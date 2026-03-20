@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"go.uber.org/zap"
+	"sankaer/internal/gameservice"
 	"sankaer/internal/pkg/config"
 	"sankaer/internal/pkg/logger"
 	pkgRedis "sankaer/internal/pkg/redis"
@@ -41,8 +42,11 @@ func main() {
 
 	zap.L().Info("游戏逻辑服务启动", zap.Int("port", cfg.Server.Port))
 
-	// TODO: 启动游戏逻辑服务
-	// game.NewService(cfg).Start()
+	// 启动游戏逻辑服务
+	svc := gameservice.NewService(cfg)
+	if err := svc.Start(); err != nil {
+		zap.L().Fatal("游戏逻辑服务启动失败", zap.Error(err))
+	}
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

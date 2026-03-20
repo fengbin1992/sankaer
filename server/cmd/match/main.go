@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"go.uber.org/zap"
+	"sankaer/internal/match"
 	"sankaer/internal/pkg/config"
 	"sankaer/internal/pkg/logger"
 	pkgRedis "sankaer/internal/pkg/redis"
@@ -41,12 +42,16 @@ func main() {
 
 	zap.L().Info("匹配服务启动", zap.Int("port", cfg.Server.Port))
 
-	// TODO: 启动匹配服务
-	// match.NewService(cfg).Start()
+	// 启动匹配服务
+	svc := match.NewService(cfg)
+	if err := svc.Start(); err != nil {
+		zap.L().Fatal("匹配服务启动失败", zap.Error(err))
+	}
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
+	svc.Stop()
 	zap.L().Info("匹配服务正在关闭...")
 }

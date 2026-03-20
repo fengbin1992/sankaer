@@ -2,7 +2,7 @@ server:
   port: 8082
 
 mysql:
-  dsn: "root:dev123456@tcp(127.0.0.1:3306)/sankaer?charset=utf8mb4&parseTime=True"
+  dsn: "root:123456@tcp(127.0.0.1:3306)/sankaer?charset=utf8mb4&parseTime=True"
   max_open_conns: 100
   max_idle_conns: 20
 
@@ -10,6 +10,9 @@ redis:
   addr: "127.0.0.1:6379"
   password: ""
   db: 1
+
+nats:
+  addr: "nats://127.0.0.1:4222"
 
 wechat:
   app_id: ""

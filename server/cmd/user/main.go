@@ -12,6 +12,8 @@ import (
 	"sankaer/internal/pkg/logger"
 	pkgRedis "sankaer/internal/pkg/redis"
 	pkgMysql "sankaer/internal/pkg/mysql"
+	pkgNats "sankaer/internal/pkg/nats"
+	"sankaer/internal/user"
 )
 
 func main() {
@@ -39,10 +41,18 @@ func main() {
 	}
 	defer pkgMysql.Close()
 
+	if err := pkgNats.Init(cfg.Nats.Addr); err != nil {
+		zap.L().Fatal("NATS 连接失败", zap.Error(err))
+	}
+	defer pkgNats.Close()
+
 	zap.L().Info("用户服务启动", zap.Int("port", cfg.Server.Port))
 
-	// TODO: 启动用户服务（HTTP + gRPC）
-	// user.NewService(cfg).Start()
+	// 启动用户服务
+	svc := user.NewService(cfg)
+	if err := svc.Start(); err != nil {
+		zap.L().Fatal("用户服务启动失败", zap.Error(err))
+	}
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
